@@ -229,12 +229,20 @@ namespace Dapper
         /// <param name="dbType">The database type to map to.</param>
         public static void AddTypeMap(Type type, DbType dbType)
         {
-            // use clone, mutate, replace to avoid threading issues
-            var snapshot = typeMap;
+            Dictionary<Type, DbType> snapshot;
+            Dictionary<Type, DbType> swapped;
 
-            if (snapshot.TryGetValue(type, out DbType oldValue) && oldValue == dbType) return; // nothing to do
+            do
+            {
+                // use clone, mutate, replace to avoid threading issues
+                snapshot = typeMap;
 
-            typeMap = new Dictionary<Type, DbType>(snapshot) { [type] = dbType };
+                if (snapshot.TryGetValue(type, out DbType oldValue) && oldValue == dbType) return; // nothing to do
+
+                var newCopy = new Dictionary<Type, DbType>(snapshot) { [type] = dbType };
+
+                swapped = Interlocked.CompareExchange(ref typeMap, newCopy, snapshot);
+            } while (!ReferenceEquals(snapshot, swapped));
         }
 
         /// <summary>
@@ -243,15 +251,20 @@ namespace Dapper
         /// <param name="type">The type to remove from the current map.</param>
         public static void RemoveTypeMap(Type type)
         {
-            // use clone, mutate, replace to avoid threading issues
-            var snapshot = typeMap;
+            Dictionary<Type, DbType> snapshot;
+            Dictionary<Type, DbType> swapped;
 
-            if (!snapshot.ContainsKey(type)) return; // nothing to do
+            do {
+                // use clone, mutate, replace to avoid threading issues
+                snapshot = typeMap;
 
-            var newCopy = new Dictionary<Type, DbType>(snapshot);
-            newCopy.Remove(type);
+                if (!snapshot.ContainsKey(type)) return; // nothing to do
 
-            typeMap = newCopy;
+                var newCopy = new Dictionary<Type, DbType>(snapshot);
+                newCopy.Remove(type);
+
+                swapped = Interlocked.CompareExchange(ref typeMap, newCopy, snapshot);
+            } while (!ReferenceEquals(snapshot, swapped));
         }
 
         /// <summary>
